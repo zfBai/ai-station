@@ -10,7 +10,7 @@
   随时点「关闭」           └→ 直接开聊（像 ChatGPT 那样逐字出结果）
 ```
 
-- 面向用户的地址：**https://ai.mltd-imagesaving.site**
+- 面向用户的地址：**https://chat.mltd-imagesaving.site**
 - 账号：管理员用**图床的 SU 账号**（image.mltd-imagesaving.site 那个），不用单独注册
 - 令牌：默认 24 小时有效，可自选 1 小时 ~ 30 天，**随时能提前关闭，关掉立刻失效**
 - 模型：**`deepseek-flash`**（就是 DeepSeek-V4.1-Flash）
@@ -117,10 +117,10 @@ https://vercel.com/new → 选 `ai-station` → Framework 保持 **Other** → D
 
 ### 步骤 4：绑定域名
 
-1. 项目 → Settings → Domains → 添加 `ai.mltd-imagesaving.site`
+1. 项目 → Settings → Domains → 添加 `chat.mltd-imagesaving.site`
 2. 记下 Vercel 给的 CNAME 目标（形如 `xxxx.vercel-dns-017.com`）
 3. Cloudflare → `mltd-imagesaving.site` → DNS → Add record：
-   **CNAME | `ai` | 上面的目标 | 代理状态必须是灰色（DNS only）**
+   **CNAME | `chat` | 上面的目标 | 代理状态必须是灰色（DNS only）**
 
 ### 步骤 5：配环境变量 ⭐ 这步不做聊天用不了
 
@@ -140,7 +140,7 @@ https://vercel.com/new → 选 `ai-station` → Framework 保持 **Other** → D
 
 ### 步骤 6：验证
 
-1. 打开 `https://ai.mltd-imagesaving.site`
+1. 打开 `https://chat.mltd-imagesaving.site`
 2. 点「我是管理员」→ 用图床 SU 账号登录
 3. 创建令牌（备注写「测试」，有效期 1 小时）
 4. 复制令牌 → 开**无痕窗口**打开同一个网址 → 粘进令牌 → 发一句「你好」
@@ -152,7 +152,7 @@ https://vercel.com/new → 选 `ai-station` → Framework 保持 **Other** → D
 
 | | 图床 | 文件站 | **AI 站** |
 |---|---|---|---|
-| 域名 | `image.` | `file.` / `download.` | `ai.` |
+| 域名 | `image.` | `file.` / `download.` | `chat.` |
 | Blob store | **同一个** | **同一个** | **同一个** |
 | 数据前缀 | `{用户名}/`、`_users/` | `f/`、`_files/` | `_tokens/` |
 | 账号 | 自己管 | 读图床的 | 读图床的（要 SU） |
