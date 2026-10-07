@@ -79,17 +79,46 @@ header .badge.warn{color:var(--warn); border-color:#4a3d1a}
 /* ---------- 2. 聊天 ---------- */
 #chatView{display:none}
 #chatView.on{display:flex}
-#messages{flex:1; min-height:0; overflow-y:auto; padding:22px 18px 8px; scroll-behavior:smooth}
+#messages{flex:1; min-height:0; overflow-y:auto; padding:22px 18px 8px}
 .msg{max-width:760px; margin:0 auto 16px; display:flex; gap:10px}
 .msg .who{
   flex:0 0 auto; width:30px; height:30px; border-radius:50%; display:grid; place-items:center;
   font-size:12px; font-weight:700; background:var(--panel2); border:1px solid var(--border); color:var(--muted);
 }
 .msg.user .who{background:var(--accent2); border-color:var(--accent); color:#fff}
-.msg .body{flex:1; min-width:0; white-space:pre-wrap; word-break:break-word; padding-top:3px}
+.msg .body{flex:1; min-width:0; overflow-wrap:break-word; word-break:break-word; padding-top:3px}
 .msg.user .body{color:#dfe6f0}
 .msg.assistant .body{color:var(--text)}
 .msg .body .cursor{display:inline-block; width:7px; height:15px; background:var(--accent); vertical-align:-2px; animation:blink 1s steps(2) infinite}
+
+/* ---------- 2.1 Markdown / LaTeX 渲染样式 ---------- */
+.msg .body > :first-child{margin-top:0}
+.msg .body > :last-child{margin-bottom:0}
+.msg .body p{margin:.55em 0}
+.msg .body h1,.msg .body h2,.msg .body h3,.msg .body h4,.msg .body h5,.msg .body h6{margin:.75em 0 .4em; line-height:1.35; font-weight:700}
+.msg .body h1{font-size:1.4em}
+.msg .body h2{font-size:1.22em}
+.msg .body h3{font-size:1.08em}
+.msg .body h4,.msg .body h5,.msg .body h6{font-size:1em}
+.msg .body ul,.msg .body ol{margin:.55em 0; padding-left:1.5em}
+.msg .body li{margin:.22em 0}
+.msg .body li > p{margin:.2em 0}
+.msg .body a{color:var(--accent); text-decoration:none}
+.msg .body a:hover{text-decoration:underline}
+.msg .body code{font-family:ui-monospace,Consolas,"Courier New",monospace; font-size:.9em; background:var(--panel2); border:1px solid var(--border); border-radius:5px; padding:1px 5px}
+.msg .body pre{margin:.6em 0; padding:11px 13px; background:var(--panel2); border:1px solid var(--border); border-radius:9px; overflow-x:auto}
+.msg .body pre code{display:block; padding:0; border:none; background:none; font-size:.88em; line-height:1.6}
+.msg .body blockquote{margin:.55em 0; padding:.1em 0 .1em 12px; border-left:3px solid var(--border); color:var(--muted)}
+.msg .body table{display:block; max-width:100%; overflow-x:auto; border-collapse:collapse; margin:.6em 0}
+.msg .body th,.msg .body td{border:1px solid var(--border); padding:5px 11px; font-size:.93em}
+.msg .body th{background:var(--panel2); font-weight:600}
+.msg .body hr{margin:.9em 0; border:none; border-top:1px solid var(--border)}
+.msg .body img{max-width:100%; border-radius:8px}
+.msg .body .katex{font-size:1.05em}
+.msg .body .katex-display{margin:.6em 0; padding:2px 0; overflow-x:auto; overflow-y:hidden}
+.msg .body .katex-display::-webkit-scrollbar{height:6px}
+.msg .body .katex-display::-webkit-scrollbar-thumb{background:var(--border); border-radius:3px}
+.msg .body code.math-err{color:var(--danger)}
 @keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
 .msg.err .body{color:var(--danger)}
 .chat-foot{flex:0 0 auto; border-top:1px solid var(--border); background:var(--panel); padding:12px 18px calc(12px + env(safe-area-inset-bottom))}
@@ -136,6 +165,7 @@ select{font:inherit; color:var(--text); background:var(--panel2); border:1px sol
 }
 #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
 </style>
+<link rel="stylesheet" href="vendor/katex.min.css">
 </head>
 <body>
 
@@ -229,6 +259,9 @@ select{font:inherit; color:var(--text); background:var(--panel2); border:1px sol
 
 <div id="toast"></div>
 
+<script src="vendor/markdown-it.min.js"></script>
+<script src="vendor/katex.min.js"></script>
+<script src="render.js"></script>
 <script>
 // ============================================================================
 // 前端：三种状态 —— 输令牌 / 聊天 / 管理面板
@@ -359,6 +392,19 @@ function renderMsgs() {
   for (const m of state.msgs) box.appendChild(buildMsg(m.role, m.content, m.error))
   box.scrollTop = box.scrollHeight
 }
+// Markdown/LaTeX 渲染（render.js 没加载成功时退回转义后的纯文本）
+const renderMd = text => {
+  if (window.AiRender) return AiRender.render(text == null ? '' : String(text))
+  return escapeHtml(String(text == null ? '' : text)).replace(/\n/g, '<br>')
+}
+// 把渲染结果写进气泡；光标跟在最后一块内容的末尾，不另起一行
+function setBody(el, text, cursor) {
+  el.innerHTML = renderMd(text)      // render.js 里 markdown-it 以 html:false 运行，模型输出中的尖括号会被转义
+  if (cursor) {
+    const last = el.lastElementChild
+    if (last) last.appendChild(cursor); else el.appendChild(cursor)
+  }
+}
 function buildMsg(role, text, isErr) {
   const wrap = document.createElement('div')
   wrap.className = 'msg ' + (isErr ? 'err' : role)
@@ -367,7 +413,8 @@ function buildMsg(role, text, isErr) {
   who.textContent = role === 'user' ? '我' : 'AI'
   const body = document.createElement('div')
   body.className = 'body'
-  body.textContent = text          // 永远走 textContent：模型输出里可能带尖括号，绝不当 HTML 插进来
+  if (isErr) body.textContent = text   // 错误提示是自家文案，纯文本展示
+  else setBody(body, text)
   wrap.appendChild(who); wrap.appendChild(body)
   return wrap
 }
@@ -397,6 +444,16 @@ async function send() {
   box.scrollTop = box.scrollHeight
 
   let answer = ''
+  let renderTimer = null
+  // 流式增量渲染：90ms 合并一批 delta 重渲染一次；没闭合的公式先按原文显示，闭合后自动成型
+  function scheduleRender() {
+    if (renderTimer) return
+    renderTimer = setTimeout(() => {
+      renderTimer = null
+      setBody(bodyEl, answer, cursor)
+      box.scrollTop = box.scrollHeight
+    }, 90)
+  }
   try {
     const res = await fetch(BASE + '/api/chat', {
       method: 'POST',
@@ -427,15 +484,15 @@ async function send() {
         try { delta = JSON.parse(payload)?.choices?.[0]?.delta?.content || '' } catch { continue }
         if (!delta) continue
         answer += delta
-        bodyEl.textContent = answer
-        bodyEl.appendChild(cursor)
-        box.scrollTop = box.scrollHeight
+        scheduleRender()
       }
     }
     if (!answer) throw new Error('模型没有返回内容，再试一次吧')
-    bodyEl.textContent = answer
+    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
+    setBody(bodyEl, answer, cursor)          // 收尾用完整内容再渲染一次
     state.msgs.push({ role: 'assistant', content: answer })
   } catch (e) {
+    if (renderTimer) { clearTimeout(renderTimer); renderTimer = null }
     cursor.remove()
     bodyEl.textContent = ''
     bubble.classList.add('err')
