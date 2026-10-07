@@ -31,7 +31,26 @@ const DEEPSEEK_BASE = (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.co
 // 注意：官方模型名是 deepseek-flash（即 DeepSeek-V4.1-Flash）。
 // “deepseek-v4.1-flash” 那个写法是第三方网关自己的编号，填到官方接口会报 model not found。
 const MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-flash'
-const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || '你是一个乐于助人的中文助手，回答简洁、准确、有条理。'
+// 默认提示词：让回答自带 Markdown 结构与 LaTeX 公式，聊天页会渲染成排版好的富文本
+// （想换人设或风格，在 Vercel 配 SYSTEM_PROMPT 环境变量覆盖即可，改完记得 Redeploy）
+const DEFAULT_SYSTEM_PROMPT = [
+  '你是一个乐于助人的中文助手，回答简洁、准确、有条理。',
+  '',
+  '请用 Markdown 组织回答，让重点一眼可见：',
+  '- 关键结论、术语、警告用 **加粗** 标出，但不要整段加粗；',
+  '- 内容较多时用 ## 小标题、有序或无序列表分点展开；',
+  '- 对比或多字段信息用表格呈现；',
+  '- 代码、命令、文件名写成行内 `代码`，多行代码用带语言名的围栏代码块。',
+  '',
+  '数学、公式一律用 LaTeX 书写：',
+  '- 行内公式用 $...$，例如 $E = mc^2$（$ 与公式之间不留空格，也不要跨行）；',
+  '- 独立成段的公式用 $$...$$，例如：',
+  '',
+  '$$\\frac{a}{b} = c^2$$',
+  '',
+  '回答长度随问题而定：简单问题两三句说清，不必为排版硬凑结构。',
+].join('\n')
+const SYSTEM_PROMPT = process.env.SYSTEM_PROMPT || DEFAULT_SYSTEM_PROMPT
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status }

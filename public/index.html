@@ -55,7 +55,11 @@ header .logo span{
 }
 header .spacer{flex:1}
 header .badge{font-size:12px; color:var(--muted); border:1px solid var(--border); border-radius:99px; padding:3px 10px}
-header .badge.warn{color:var(--warn); border-color:#4a3d1a}
+/* 顶栏中区：到期时刻 + 剩余时间；窄屏藏掉到期时刻防挤 */
+header .head-center{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); white-space:nowrap}
+header .head-center .head-sep{opacity:.45}
+header .head-center .warn{color:var(--warn)}
+@media (max-width:640px){ header .head-center .head-time, header .head-center .head-sep{display:none} }
 
 /* ---------- 通用视图容器 ---------- */
 .view{flex:1; min-height:0; display:flex; flex-direction:column}
@@ -79,6 +83,18 @@ header .badge.warn{color:var(--warn); border-color:#4a3d1a}
 /* ---------- 2. 聊天 ---------- */
 #chatView{display:none}
 #chatView.on{display:flex}
+/* 聊天窗口标签栏：一个标签 = 一个独立会话，横向排开，多了可滚 */
+.tabs{flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:9px 18px; border-bottom:1px solid var(--border); background:var(--panel)}
+.tabs-inner{flex:1; min-width:0; display:flex; gap:6px; overflow-x:auto; scrollbar-width:none}
+.tabs-inner::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto; display:flex; align-items:center; gap:4px; max-width:180px; padding:6px 6px 6px 12px; border:1px solid transparent; border-radius:8px; color:var(--muted); font-size:13px; cursor:pointer; user-select:none; transition:.15s}
+.tab:hover{background:var(--panel2); color:var(--text)}
+.tab.on{background:var(--panel2); border-color:var(--border); color:var(--text)}
+.tab .tab-name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.tab .tab-x{flex:0 0 auto; width:19px; height:19px; padding:0; display:grid; place-items:center; background:transparent; color:var(--muted); font-size:15px; line-height:1; border-radius:5px; transition:.15s}
+.tab .tab-x:hover{background:#2f1d1d; color:var(--danger)}
+.tab-new{flex:0 0 auto; height:30px; padding:0 12px; display:grid; place-items:center; background:transparent; color:var(--muted); border:1px dashed var(--border); border-radius:8px; font-size:13px; transition:.15s}
+.tab-new:hover:not(:disabled){color:var(--text); border-color:#3a4150}
 #messages{flex:1; min-height:0; overflow-y:auto; padding:22px 18px 8px}
 .msg{max-width:760px; margin:0 auto 16px; display:flex; gap:10px}
 .msg .who{
@@ -125,7 +141,6 @@ header .badge.warn{color:var(--warn); border-color:#4a3d1a}
 .chat-inner{max-width:760px; margin:0 auto; display:flex; gap:10px; align-items:flex-end}
 #chatInput{flex:1; resize:none; max-height:180px; min-height:44px; line-height:1.5; padding:11px 14px}
 #sendBtn{flex:0 0 auto; height:44px; padding:0 20px}
-.chat-tip{max-width:760px; margin:6px auto 0; font-size:12px; color:var(--muted); text-align:center}
 
 /* ---------- 3. 管理面板 ---------- */
 #adminView{display:none; overflow-y:auto; padding:24px 18px 60px}
@@ -172,8 +187,14 @@ select{font:inherit; color:var(--text); background:var(--panel2); border:1px sol
 <header>
   <div class="logo">ml<span>Chat</span></div>
   <div class="spacer"></div>
-  <div class="badge hidden" id="tokenBadge"></div>
+  <div class="head-center hidden" id="headCenter">
+    <span class="head-time" id="headTime"></span>
+    <span class="head-sep">·</span>
+    <span id="headLeft"></span>
+  </div>
+  <div class="spacer"></div>
   <button class="btn-ghost hidden" id="logoutBtn">退出</button>
+  <div class="badge hidden" id="userBadge"></div>
 </header>
 
 <!-- ============ 1. 输令牌 ============ -->
@@ -206,13 +227,16 @@ select{font:inherit; color:var(--text); background:var(--panel2); border:1px sol
 
 <!-- ============ 2. 聊天 ============ -->
 <div class="view" id="chatView">
+  <div class="tabs">
+    <div class="tabs-inner" id="tabsInner"></div>
+    <button class="tab-new" id="newChatBtn" title="新建聊天窗口">＋ 新窗口</button>
+  </div>
   <div id="messages"></div>
   <div class="chat-foot">
     <div class="chat-inner">
       <textarea id="chatInput" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）" rows="1"></textarea>
       <button class="btn-primary" id="sendBtn">发送</button>
     </div>
-    <div class="chat-tip" id="chatTip"></div>
   </div>
 </div>
 
@@ -276,7 +300,9 @@ const state = {
   expiresAt: 0,
   adminUser: '',
   adminPass: '',
-  msgs: [],           // 当前会话的消息数组 { role, content }
+  sessions: [],       // 所有聊天窗口：[{ id, msgs: [{ role, content }] }]
+  activeId: '',       // 当前窗口的 id
+  msgs: [],           // 直接指向当前窗口的 msgs，发送/渲染都读写它
   busy: false,
 }
 
@@ -351,10 +377,8 @@ async function enterChat() {
     state.token = token
     state.label = info.label || ''
     state.expiresAt = info.expiresAt
-    state.msgs = loadMsgs(token)
-    if (!state.msgs.length) state.msgs = [{ role: 'assistant', content: '你好，有什么可以帮你的？' }]
-    renderMsgs()
-    refreshBadge()
+    loadSessions()
+    refreshHeader()
     showView('chat')
     $('chatInput').focus()
   } catch (e) {
@@ -364,13 +388,118 @@ async function enterChat() {
   }
 }
 
-// 会话按令牌分别存在本地，刷新页面还能接着聊
-function loadMsgs(token) {
-  try { return JSON.parse(localStorage.getItem('ai_msgs_' + token) || '[]') } catch { return [] }
+// ---------- 聊天窗口：多个会话互不干扰，按令牌存在本机 ----------
+const welcome = () => ({ role: 'assistant', content: '你好，有什么可以帮你的？' })
+const newSessionId = () => Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7)
+
+// 存档里的消息只信任 role/content 两个字段，坏数据当场丢掉
+function normalizeMsgs(raw) {
+  if (!Array.isArray(raw)) return []
+  const out = []
+  for (const m of raw) {
+    if (!m || typeof m.content !== 'string') continue
+    out.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })
+  }
+  return out
 }
-function saveMsgs() {
-  if (!state.token) return
-  try { localStorage.setItem('ai_msgs_' + state.token, JSON.stringify(state.msgs.slice(-60))) } catch {}
+
+function loadSessions() {
+  let data = null
+  try { data = JSON.parse(localStorage.getItem('ai_sessions_' + state.token) || 'null') } catch {}
+  const list = []
+  for (const s of (data && Array.isArray(data.list) ? data.list : [])) {
+    if (!s || typeof s.id !== 'string') continue
+    const msgs = normalizeMsgs(s.msgs)
+    list.push({ id: s.id, msgs: msgs.length ? msgs : [welcome()] })
+  }
+  if (!list.length) {
+    // 老版本只存一个会话（键名 ai_msgs_{token}）：把旧记录搬进第一个窗口
+    let old = []
+    try { old = normalizeMsgs(JSON.parse(localStorage.getItem('ai_msgs_' + state.token) || '[]')) } catch {}
+    list.push({ id: newSessionId(), msgs: old.length ? old : [welcome()] })
+  }
+  state.sessions = list
+  activate(list.find(s => s.id === data?.active) || list[0], false)
+}
+
+function saveSessions() {
+  if (!state.token || !state.sessions.length) return
+  try {
+    const list = state.sessions.map(s => ({ id: s.id, msgs: s.msgs.slice(-60) }))
+    localStorage.setItem('ai_sessions_' + state.token, JSON.stringify({ active: state.activeId, list }))
+  } catch {}
+}
+
+// 切到某个窗口：state.msgs 改成指向它的消息数组
+function activate(sess, save = true) {
+  state.activeId = sess.id
+  state.msgs = sess.msgs
+  renderTabs()
+  renderMsgs()
+  if (save) saveSessions()
+}
+
+// 标签文字取第一条提问，够一眼认出是哪个话题
+function sessionTitle(s) {
+  const first = s.msgs.find(m => m.role === 'user')
+  if (!first) return '新对话'
+  const t = String(first.content).replace(/\s+/g, ' ').trim()
+  return t.length > 12 ? t.slice(0, 12) + '…' : t
+}
+
+function renderTabs() {
+  const box = $('tabsInner')
+  box.innerHTML = ''
+  for (const s of state.sessions) {
+    const tab = document.createElement('div')
+    tab.className = 'tab' + (s.id === state.activeId ? ' on' : '')
+    tab.title = sessionTitle(s)
+    const name = document.createElement('span')
+    name.className = 'tab-name'
+    name.textContent = sessionTitle(s)
+    const x = document.createElement('button')
+    x.className = 'tab-x'
+    x.textContent = '×'
+    x.title = '删除这个聊天窗口'
+    x.onclick = ev => { ev.stopPropagation(); closeSession(s.id) }
+    tab.appendChild(name); tab.appendChild(x)
+    tab.onclick = () => switchSession(s.id)
+    box.appendChild(tab)
+  }
+  const on = box.querySelector('.tab.on')
+  if (on) { try { on.scrollIntoView({ block: 'nearest', inline: 'nearest' }) } catch { on.scrollIntoView(false) } }
+}
+
+function switchSession(id) {
+  if (id === state.activeId) return
+  if (state.busy) return toast('等这条回复完再切换窗口')
+  const s = state.sessions.find(v => v.id === id)
+  if (s) activate(s)
+}
+
+function createSession() {
+  if (state.busy) return toast('等这条回复完再新建窗口')
+  const s = { id: newSessionId(), msgs: [welcome()] }
+  state.sessions.push(s)
+  activate(s)
+  $('chatInput').focus()
+}
+
+function closeSession(id) {
+  if (state.busy) return toast('等这条回复完再删除窗口')
+  const idx = state.sessions.findIndex(s => s.id === id)
+  if (idx < 0) return
+  const s = state.sessions[idx]
+  const used = s.msgs.some(m => m.role === 'user')   // 只有欢迎语的空窗口直接关，不弹确认
+  if (used && !confirm(`确定删除「${sessionTitle(s)}」这个聊天窗口吗？\n窗口里的聊天记录会一起删掉。`)) return
+  state.sessions.splice(idx, 1)
+  if (!state.sessions.length) state.sessions.push({ id: newSessionId(), msgs: [welcome()] })
+  if (state.activeId === id) {
+    activate(state.sessions[Math.min(idx, state.sessions.length - 1)])
+  } else {
+    saveSessions()
+    renderTabs()
+  }
 }
 
 // ============================================================================
@@ -385,6 +514,7 @@ chatInput.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
 })
 $('sendBtn').addEventListener('click', send)
+$('newChatBtn').addEventListener('click', createSession)
 
 function renderMsgs() {
   const box = $('messages')
@@ -429,7 +559,9 @@ async function send() {
   chatInput.value = ''
   chatInput.style.height = 'auto'
 
+  const firstAsk = !state.msgs.some(m => m.role === 'user')   // 本窗口第一条提问 → 标签要用它起名
   state.msgs.push({ role: 'user', content: text })
+  if (firstAsk) renderTabs()
   const box = $('messages')
   box.appendChild(buildMsg('user', text))
   box.scrollTop = box.scrollHeight
@@ -500,21 +632,24 @@ async function send() {
     state.msgs.pop()                  // 失败的那轮不留在上下文里
   } finally {
     cursor.remove()
-    saveMsgs()
+    saveSessions()
     state.busy = false
     $('sendBtn').disabled = false
     chatInput.focus()
   }
 }
 
-// 顶栏显示令牌还剩多久
-function refreshBadge() {
+// 顶栏：中区显示到期时刻与剩余时间，最右侧挂管理员给这个令牌起的名字
+function refreshHeader() {
   const left = state.expiresAt - Date.now()
-  const b = $('tokenBadge')
-  b.classList.toggle('hidden', !state.token)
-  b.classList.toggle('warn', left < 3600000)
-  b.textContent = state.label ? `${state.label} · 剩 ${fmtLeft(left)}` : `剩 ${fmtLeft(left)}`
-  $('chatTip').textContent = state.label ? `令牌：${state.label} · 有效期至 ${fmtTime(state.expiresAt)}` : ''
+  $('headCenter').classList.toggle('hidden', !state.token)
+  $('headTime').textContent = '有效期至 ' + fmtTime(state.expiresAt)
+  const lt = $('headLeft')
+  lt.textContent = '剩 ' + fmtLeft(left)
+  lt.classList.toggle('warn', left < 3600000)          // 不到 1 小时变黄提醒
+  const b = $('userBadge')
+  b.classList.toggle('hidden', !state.token || !state.label)
+  b.textContent = state.label
 }
 
 // ============================================================================
@@ -548,9 +683,10 @@ async function adminLogin() {
 }
 $('logoutBtn').addEventListener('click', () => {
   state.adminUser = ''; state.adminPass = ''; state.token = ''
-  state.msgs = []
+  state.sessions = []; state.activeId = ''; state.msgs = []
   $('logoutBtn').classList.add('hidden')
-  $('tokenBadge').classList.add('hidden')
+  $('userBadge').classList.add('hidden')
+  $('headCenter').classList.add('hidden')
   showView('gate')
 })
 
@@ -644,7 +780,7 @@ async function revokeToken(t) {
 // 启动：支持邀请链接 #令牌，直接进聊天
 // ============================================================================
 ;(function boot() {
-  setInterval(() => { if (state.token) refreshBadge() }, 30000)
+  setInterval(() => { if (state.token) refreshHeader() }, 30000)
   const hash = location.hash.replace(/[^A-Za-z2-9]/g, '')
   if (hash.length === 16) {
     $('tokenInput').value = hash.toUpperCase().match(/.{1,4}/g).join('-')
